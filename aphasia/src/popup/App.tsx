@@ -1,10 +1,6 @@
-import HelloWorld from '@/components/HelloWorld'
+import { AuthPage } from '@/components/AuthPage'
 import './App.css'
 
 export default function App() {
-  return (
-    <div>
-      <HelloWorld msg="Vite + React + CRXJS" />
-    </div>
-  )
+  return <AuthPage />
 }
