@@ -1,9 +1,10 @@
 import Logo from '@/assets/crx.svg'
 import { useState } from 'react'
+import { ThemeProvider } from '@/components/theme-provider'
 import { AuthModal } from '@/components/AuthModal'
 import './App.css'
 
-function App() {
+function AppContent() {
   const [show, setShow] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
@@ -47,6 +48,14 @@ function App() {
         initialMode={authMode}
       />
     </div>
+  )
+}
+
+function App() {
+  return (
+    <ThemeProvider defaultTheme="system" storageKey="aphasia-theme">
+      <AppContent />
+    </ThemeProvider>
   )
 }
 

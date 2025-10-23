@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthModal } from '@/components/AuthModal'
+import { ModeToggle } from '@/components/mode-toggle'
 
 export function AuthPage() {
   const [showAuthModal, setShowAuthModal] = useState(false)
@@ -14,6 +15,11 @@ export function AuthPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
+      {/* Theme Toggle */}
+      <div className="absolute top-4 right-4">
+        <ModeToggle />
+      </div>
+      
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center space-y-4">
