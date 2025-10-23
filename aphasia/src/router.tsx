@@ -4,22 +4,44 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SignupForm } from '@/components/SignupForm'
 import { LoginForm } from '@/components/LoginForm'
+import { ArrowLeft } from 'lucide-react'
 import { useState } from 'react'
 
 // Simple routing state management
 type Route = 'home' | 'signup' | 'login'
 
 // Layout component for all routes
-function RootLayout({ children }: { children: React.ReactNode }) {
+function RootLayout({ children, showThemeToggle = true, showBackButton = false, onBack, isAuthPage = false }: { 
+  children: React.ReactNode
+  showThemeToggle?: boolean
+  showBackButton?: boolean
+  onBack?: () => void
+  isAuthPage?: boolean
+}) {
   return (
     <ThemeProvider defaultTheme="system" storageKey="aphasia-theme">
-      <div className="min-h-screen flex items-center justify-center p-4">
-        {/* Theme Toggle */}
-        <div className="absolute top-4 right-4">
-          <ModeToggle />
-        </div>
+      <div className={`min-h-screen ${isAuthPage ? 'flex flex-col' : 'flex items-center justify-center'} p-4`}>
+        {/* Theme Toggle - only show on home page */}
+        {showThemeToggle && (
+          <div className="absolute top-4 right-4">
+            <ModeToggle />
+          </div>
+        )}
         
-        <div className="w-full max-w-md">
+        {/* Back Button - show on all pages except home */}
+        {showBackButton && onBack && (
+          <div className="absolute top-4 left-4">
+            <Button
+              onClick={onBack}
+              variant="ghost"
+              size="icon"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+        
+        <div className={`w-full max-w-md ${isAuthPage ? 'flex-1 flex flex-col justify-start pt-16' : ''}`}>
           {children}
         </div>
       </div>
@@ -103,34 +125,22 @@ function HomePage({ onNavigate }: { onNavigate: (route: Route) => void }) {
 // Signup page component
 function SignupPage({ onNavigate }: { onNavigate: (route: Route) => void }) {
   return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <Button variant="ghost" className="mb-4" onClick={() => onNavigate('home')}>
-          ← Back to Home
-        </Button>
-      </div>
+    <RootLayout showThemeToggle={false} showBackButton={true} onBack={() => onNavigate('home')} isAuthPage={true}>
       <SignupForm 
         onSwitchToLogin={() => onNavigate('login')}
-        onClose={() => onNavigate('home')}
       />
-    </div>
+    </RootLayout>
   )
 }
 
 // Login page component
 function LoginPage({ onNavigate }: { onNavigate: (route: Route) => void }) {
   return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <Button variant="ghost" className="mb-4" onClick={() => onNavigate('home')}>
-          ← Back to Home
-        </Button>
-      </div>
+    <RootLayout showThemeToggle={false} showBackButton={true} onBack={() => onNavigate('home')} isAuthPage={true}>
       <LoginForm 
         onSwitchToSignup={() => onNavigate('signup')}
-        onClose={() => onNavigate('home')}
       />
-    </div>
+    </RootLayout>
   )
 }
 
@@ -156,7 +166,11 @@ export function App() {
   }
 
   return (
-    <RootLayout>
+    <RootLayout 
+      showThemeToggle={currentRoute === 'home'} 
+      showBackButton={currentRoute !== 'home'}
+      onBack={currentRoute !== 'home' ? () => handleNavigate('home') : undefined}
+    >
       {renderCurrentRoute()}
     </RootLayout>
   )

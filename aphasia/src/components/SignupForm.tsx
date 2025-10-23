@@ -1,10 +1,7 @@
-import React from 'react'
 import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   Form,
   FormControl,
@@ -16,7 +13,7 @@ import {
 
 interface SignupFormProps {
   onSwitchToLogin: () => void
-  onClose: () => void
+  onClose?: () => void
 }
 
 interface SignupFormData {
@@ -43,34 +40,8 @@ export function SignupForm({ onSwitchToLogin, onClose }: SignupFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      {/* Header */}
-      <CardHeader className="flex flex-row items-center justify-between pb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-primary rounded flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">A</span>
-          </div>
-          <span className="text-sm text-muted-foreground">Aphasia: short description</span>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={onClose}
-            variant="ghost"
-            size="icon"
-          >
-            ✕
-          </Button>
-          <Button
-            onClick={onClose}
-            variant="ghost"
-            size="icon"
-          >
-            ✕
-          </Button>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-6">
+    <div className="w-full space-y-6">
+      <div className="space-y-6">
         {/* Logo and Title */}
         <div className="text-center space-y-2">
           <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto">
@@ -198,7 +169,7 @@ export function SignupForm({ onSwitchToLogin, onClose }: SignupFormProps) {
             <Button variant="link" className="p-0 h-auto text-xs">privacy policy</Button>.
           </p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
