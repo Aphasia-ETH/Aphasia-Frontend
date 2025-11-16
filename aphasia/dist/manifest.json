@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "aphasia",
+  "version": "1.0.0",
+  "icons": {
+    "48": "public/logo.png"
+  },
+  "action": {
+    "default_icon": {
+      "48": "public/logo.png"
+    },
+    "default_popup": "src/popup/index.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "contentSettings",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*.self.xyz/*",
+    "https://playground.staging.self.xyz/*"
+  ],
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  }
+}
