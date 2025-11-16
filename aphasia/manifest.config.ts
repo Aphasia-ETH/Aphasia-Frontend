@@ -14,12 +14,12 @@ export default defineManifest({
     },
     default_popup: "src/popup/index.html",
   },
-  permissions: ["sidePanel", "contentSettings"],
-  content_scripts: [
-    {
-      js: ["src/content/main.tsx"],
-      matches: ["https://*/*"],
-    },
+  permissions: ["sidePanel", "contentSettings", "storage"],
+  host_permissions: [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*.self.xyz/*",
+    "https://playground.staging.self.xyz/*",
   ],
   side_panel: {
     default_path: "src/sidepanel/index.html",
