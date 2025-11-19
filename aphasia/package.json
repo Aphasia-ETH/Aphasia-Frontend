@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:help": "echo '📦 Chrome Extension Dev Mode\\n\\n1. Run: npm run dev\\n2. Open Chrome → chrome://extensions/\\n3. Enable Developer mode\\n4. Click Load unpacked\\n5. Select the dist/ folder\\n\\nThe extension will auto-reload when you make changes!'"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

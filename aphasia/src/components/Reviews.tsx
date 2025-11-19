@@ -1,14 +1,15 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { 
   ThumbsUp, ThumbsDown, Paperclip, Send, Settings, Sparkles, Search, 
-  TrendingUp, Clock, Star, X, ChevronDown, MessageCircle
+  TrendingUp, Clock, Star, X, ChevronDown, MessageCircle, ExternalLink, Shield, Edit, Trash2
 } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
-import { reviewsApi, ReviewLevel, ApiClientError, healthApi } from '@/lib/api'
+import { reviewsApi, batchApi, ReviewLevel, ApiClientError, healthApi, BatchStatusResponse } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import {
   DropdownMenu,
@@ -16,6 +17,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 interface User {
   id: string
@@ -36,6 +42,11 @@ interface Comment {
   isLiked: boolean
   isDisliked: boolean
   isAISummary?: boolean
+  reviewLevel?: number  // The level of the review (L1, L2, L3)
+  onChainVerified?: boolean  // Whether the review is verified on-chain
+  transactionHash?: string  // Hedera transaction hash
+  hcsSequence?: string  // HCS sequence number
+  hederaTopicId?: string  // HCS topic ID
 }
 
 type SortOption = 'recent' | 'popular' | 'trending'
@@ -62,7 +73,22 @@ export function Reviews({ onNavigate }: ReviewsProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('recent')
   const [selectedLevel, setSelectedLevel] = useState<ReviewLevel>(1)
-  const [productId] = useState('default-product') // In real app, get from context/URL
+  const [productId, setProductId] = useState(() => {
+    // Try to load from localStorage first
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      return 'default-product' // Will be loaded from storage in useEffect
+    }
+    return localStorage.getItem('aphasia-product-id') || 'default-product'
+  })
+  const [productName, setProductName] = useState('')
+  const [showProductSelector, setShowProductSelector] = useState(false)
+  const [productInput, setProductInput] = useState('')
+  const [batchStatus, setBatchStatus] = useState<BatchStatusResponse | null>(null)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Load user profile from auth context
   useEffect(() => {
@@ -89,6 +115,102 @@ export function Reviews({ onNavigate }: ReviewsProps) {
       })
     }
   }, [user, isAuthenticated])
+
+  // Load product ID from storage and try to extract from page
+  useEffect(() => {
+    const loadProductId = async () => {
+      // Try Chrome storage first (for extension)
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get(['aphasia-product-id', 'aphasia-product-name'], (result) => {
+          if (result['aphasia-product-id']) {
+            setProductId(result['aphasia-product-id'])
+            setProductName(result['aphasia-product-name'] || '')
+          } else {
+            // Try to extract from current page
+            extractProductFromPage()
+          }
+        })
+      } else {
+        // Use localStorage for web
+        const storedId = localStorage.getItem('aphasia-product-id')
+        const storedName = localStorage.getItem('aphasia-product-name')
+        if (storedId) {
+          setProductId(storedId)
+          setProductName(storedName || '')
+        } else {
+          // Try to extract from current page
+          extractProductFromPage()
+        }
+      }
+    }
+
+    const extractProductFromPage = () => {
+      // Try to extract product info from page (for Chrome extension)
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.url) {
+            const url = new URL(tabs[0].url)
+            // Try common e-commerce patterns
+            const pathParts = url.pathname.split('/').filter(Boolean)
+            
+            // Amazon: /dp/PRODUCT_ID or /gp/product/PRODUCT_ID
+            if (url.hostname.includes('amazon')) {
+              const dpMatch = url.pathname.match(/\/dp\/([A-Z0-9]+)/)
+              const gpMatch = url.pathname.match(/\/gp\/product\/([A-Z0-9]+)/)
+              if (dpMatch) {
+                const id = dpMatch[1]
+                setProductId(`amazon-${id}`)
+                setProductName('Amazon Product')
+                saveProductId(`amazon-${id}`, 'Amazon Product')
+                return
+              } else if (gpMatch) {
+                const id = gpMatch[1]
+                setProductId(`amazon-${id}`)
+                setProductName('Amazon Product')
+                saveProductId(`amazon-${id}`, 'Amazon Product')
+                return
+              }
+            }
+            
+            // Generic: use domain + path as product ID
+            if (pathParts.length > 0) {
+              const extractedId = `${url.hostname}-${pathParts[pathParts.length - 1]}`
+              setProductId(extractedId)
+              setProductName(url.hostname)
+              saveProductId(extractedId, url.hostname)
+            }
+          }
+        })
+      }
+    }
+
+    loadProductId()
+  }, [])
+
+  // Save product ID to storage
+  const saveProductId = (id: string, name: string = '') => {
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({
+        'aphasia-product-id': id,
+        'aphasia-product-name': name,
+      })
+    } else {
+      localStorage.setItem('aphasia-product-id', id)
+      if (name) {
+        localStorage.setItem('aphasia-product-name', name)
+      }
+    }
+  }
+
+  // Handle product ID change
+  const handleProductChange = (newProductId: string, newProductName: string = '') => {
+    setProductId(newProductId)
+    setProductName(newProductName)
+    saveProductId(newProductId, newProductName)
+    setShowProductSelector(false)
+    setProductInput('')
+    // Reviews will reload automatically when productId changes
+  }
 
   // Test connection and fetch reviews from API
   useEffect(() => {
@@ -128,7 +250,7 @@ export function Reviews({ onNavigate }: ReviewsProps) {
             id: review.user?.id || review.authorId || review.userId,
             name: review.user?.name || 'Anonymous',
             avatar: review.user?.name?.charAt(0).toUpperCase() || 'A',
-            level: review.user?.level || review.level || 1,
+            level: review.level || review.user?.level || 1, // Review level takes precedence
             score: review.user?.score,
             achievement: review.user?.achievement,
           },
@@ -140,6 +262,11 @@ export function Reviews({ onNavigate }: ReviewsProps) {
           dislikes: 0,
           isLiked: false,
           isDisliked: false,
+          reviewLevel: review.level || 1, // Store review level separately
+          onChainVerified: review.onChainVerified || !!(review.transactionHash || review.hcsSequence), // Store verification status
+          transactionHash: review.transactionHash,
+          hcsSequence: review.hcsSequence,
+          hederaTopicId: review.hederaTopicId || review.topicId,
         }))
         setComments(convertedComments)
       } catch (error) {
@@ -170,6 +297,38 @@ export function Reviews({ onNavigate }: ReviewsProps) {
     
     loadReviews()
   }, [productId])
+
+  // Load batch status periodically
+  useEffect(() => {
+    const loadBatchStatus = async () => {
+      try {
+        const status = await batchApi.getStatus()
+        setBatchStatus(status)
+      } catch (error) {
+        console.error('Failed to load batch status:', error)
+        // Don't show error - batch status is optional
+      }
+    }
+
+    // Load immediately
+    loadBatchStatus()
+
+    // Refresh every 30 seconds
+    const interval = setInterval(loadBatchStatus, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Format time until next batch
+  const formatTimeUntilBatch = (ms: number): string => {
+    if (ms < 0) return 'Overdue'
+    const seconds = Math.floor(ms / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    
+    if (hours > 0) return `${hours}h ${minutes % 60}m`
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`
+    return `${seconds}s`
+  }
 
   const formatTimestamp = (dateString: string): string => {
     const date = new Date(dateString)
@@ -319,27 +478,40 @@ export function Reviews({ onNavigate }: ReviewsProps) {
     setIsSending(true)
     
     try {
-      const response = await reviewsApi.createReview({
+      // Prepare review data with required fields
+      const reviewData: any = {
         productId,
         content: commentText.trim(),
         level: selectedLevel,
-      })
+        authorId: userProfile.id, // Required by backend
+        rating: 5, // Default rating (can be made configurable later)
+      }
+      
+      // Add reviewerWallet for L3 reviews (if available)
+      // Note: Backend may require wallet address for L3 reviews
+      // For now, we'll let the backend handle this requirement
+      if (selectedLevel === 3) {
+        // Backend will need reviewerWallet - this should be provided by the user's wallet connection
+        // For now, we'll omit it and let backend handle the validation
+      }
+      
+      const response = await reviewsApi.createReview(reviewData)
       
       // Handle different response formats
-      let reviewData: any
+      let reviewResponse: any
       if (response.review) {
-        reviewData = response.review
+        reviewResponse = response.review
       } else if (response.data?.review) {
-        reviewData = response.data.review
+        reviewResponse = response.data.review
       } else if (response.data) {
-        reviewData = response.data
+        reviewResponse = response.data
       } else {
-        reviewData = response
+        reviewResponse = response
       }
       
       // Convert API response to Comment format
       const newComment: Comment = {
-        id: reviewData.reviewId || reviewData.id,
+        id: reviewResponse.reviewId || reviewResponse.id,
         user: {
           id: userProfile.id,
           name: userProfile.name,
@@ -347,7 +519,7 @@ export function Reviews({ onNavigate }: ReviewsProps) {
           level: userProfile.level,
           score: userProfile.score,
         },
-        content: reviewData.text || reviewData.content || commentText,
+        content: reviewResponse.text || reviewResponse.content || commentText,
         timestamp: 'Just now',
         likes: 0,
         dislikes: 0,
@@ -359,7 +531,7 @@ export function Reviews({ onNavigate }: ReviewsProps) {
       setCommentText('')
       
       toast.success('Review posted!', {
-        description: `L${selectedLevel} review has been created${reviewData.batchId ? ' and queued for batch processing' : ''}.`,
+        description: `L${selectedLevel} review has been created${reviewResponse.batchId ? ' and queued for batch processing' : ''}.`,
         icon: <Sparkles className="h-4 w-4" />,
       })
       
@@ -431,6 +603,105 @@ export function Reviews({ onNavigate }: ReviewsProps) {
     }
   }
 
+  // Check if comment belongs to current user
+  const isOwnComment = (comment: Comment): boolean => {
+    return !!(isAuthenticated && userProfile.id && comment.user.id === userProfile.id)
+  }
+
+  // Handle edit review
+  const handleEditComment = (comment: Comment) => {
+    setEditingCommentId(comment.id)
+    setEditText(comment.content)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingCommentId || !editText.trim()) {
+      toast.error('Please enter review text')
+      return
+    }
+
+    setIsEditing(true)
+    try {
+      await reviewsApi.updateReview(editingCommentId, { text: editText.trim() })
+      
+      // Update comment in local state
+      setComments(prev => prev.map(comment => 
+        comment.id === editingCommentId
+          ? { ...comment, content: editText.trim() }
+          : comment
+      ))
+
+      setEditingCommentId(null)
+      setEditText('')
+      toast.success('Review updated successfully')
+    } catch (error) {
+      console.error('Failed to update review:', error)
+      
+      let errorMessage = 'Failed to update review. Please try again.'
+      if (error instanceof ApiClientError) {
+        if (error.status === 404) {
+          errorMessage = 'Update endpoint not yet implemented on the backend. Please contact the backend team to implement PATCH /api/v1/reviews/:reviewId'
+        } else {
+          errorMessage = error.message || errorMessage
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message || errorMessage
+      }
+      
+      toast.error('Failed to update review', {
+        description: errorMessage,
+        duration: 5000,
+      })
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null)
+    setEditText('')
+  }
+
+  // Handle delete review
+  const handleDeleteComment = async (commentId: string) => {
+    if (!window.confirm('Are you sure you want to delete this review? This action cannot be undone.')) {
+      return
+    }
+
+    setIsDeleting(true)
+    setDeletingCommentId(commentId)
+    
+    try {
+      await reviewsApi.deleteReview(commentId)
+      
+      // Remove comment from local state
+      setComments(prev => prev.filter(comment => comment.id !== commentId))
+      
+      toast.success('Review deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete review:', error)
+      
+      let errorMessage = 'Failed to delete review. Please try again.'
+      if (error instanceof ApiClientError) {
+        if (error.status === 404) {
+          errorMessage = 'Delete endpoint not yet implemented on the backend. Please contact the backend team to implement DELETE /api/v1/reviews/:reviewId'
+        } else {
+          errorMessage = error.message || errorMessage
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message || errorMessage
+      }
+      
+      toast.error('Failed to delete review', {
+        description: errorMessage,
+        duration: 5000,
+      })
+    } finally {
+      setIsDeleting(false)
+      setDeletingCommentId(null)
+    }
+  }
+
   const getLevelBadgeColor = (level: number) => {
     switch (level) {
       case 3: return 'bg-green-500'
@@ -480,6 +751,121 @@ export function Reviews({ onNavigate }: ReviewsProps) {
           </div>
         </div>
       </div>
+
+      {/* Product Selection */}
+      <div className="bg-card border rounded-lg m-2 p-3 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-muted-foreground mb-1">Product</div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm truncate">
+                {productName || productId}
+              </span>
+              <Badge variant="outline" className="text-xs">
+                {productId}
+              </Badge>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowProductSelector(!showProductSelector)}
+          >
+            {showProductSelector ? 'Cancel' : 'Change'}
+          </Button>
+        </div>
+        
+        {showProductSelector && (
+          <div className="mt-3 space-y-2 pt-3 border-t">
+            <Input
+              placeholder="Enter product ID or name"
+              value={productInput}
+              onChange={(e) => setProductInput(e.target.value)}
+              className="text-sm"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && productInput.trim()) {
+                  handleProductChange(productInput.trim(), productInput.trim())
+                }
+              }}
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 h-7 text-xs"
+                onClick={() => {
+                  if (productInput.trim()) {
+                    handleProductChange(productInput.trim(), productInput.trim())
+                  }
+                }}
+                disabled={!productInput.trim()}
+              >
+                Set Product
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => {
+                  // Try to extract from current page again
+                  if (typeof chrome !== 'undefined' && chrome.tabs) {
+                    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                      if (tabs[0]?.url) {
+                        const url = new URL(tabs[0].url)
+                        const pathParts = url.pathname.split('/').filter(Boolean)
+                        if (pathParts.length > 0) {
+                          const extractedId = `${url.hostname}-${pathParts[pathParts.length - 1]}`
+                          handleProductChange(extractedId, url.hostname)
+                        }
+                      }
+                    })
+                  }
+                }}
+              >
+                Auto-detect
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Batch Status */}
+      {batchStatus && batchStatus.data && batchStatus.data.pendingCount > 0 && (
+        <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-lg m-2 p-3 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              <div>
+                <div className="text-xs font-medium">Batch Processing</div>
+                <div className="text-xs text-muted-foreground">
+                  {batchStatus.data.pendingCount} review{batchStatus.data.pendingCount !== 1 ? 's' : ''} pending
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              {batchStatus.data.nextBatchTime && (
+                <div className="text-xs text-muted-foreground">
+                  {(() => {
+                    const nextBatch = new Date(batchStatus.data.nextBatchTime!)
+                    const now = new Date()
+                    const diff = nextBatch.getTime() - now.getTime()
+                    return diff > 0 
+                      ? `Next batch in ${formatTimeUntilBatch(diff)}`
+                      : 'Ready for batch'
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+          {batchStatus.data.pendingCount >= batchStatus.data.batchSize && (
+            <div className="mt-2 pt-2 border-t border-blue-500/20">
+              <div className="text-xs text-blue-500 font-medium">
+                ⚡ Batch ready for attestation ({batchStatus.data.pendingCount}/{batchStatus.data.batchSize})
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search and Filter Bar */}
       <div className="px-2 pb-3 space-y-3">
@@ -573,8 +959,23 @@ export function Reviews({ onNavigate }: ReviewsProps) {
                 ) : (
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold">{comment.user.name}</span>
+                    {/* Review Level Badge */}
+                    {comment.reviewLevel && (
+                      <Badge 
+                        className={`${
+                          comment.reviewLevel === 3 ? 'bg-green-600' :
+                          comment.reviewLevel === 2 ? 'bg-blue-600' :
+                          'bg-gray-600'
+                        } text-white text-xs px-2 py-0.5 shadow-sm`}
+                        title={`Level ${comment.reviewLevel} Review`}
+                      >
+                        L{comment.reviewLevel}
+                        {comment.onChainVerified && ' ✓'}
+                      </Badge>
+                    )}
+                    {/* User Level Badge */}
                     <Badge className={`${getLevelBadgeColor(comment.user.level)} text-white text-xs px-2 py-0.5 shadow-sm`}>
-                      Lv{comment.user.level} ✓
+                      Lv{comment.user.level}
                     </Badge>
                     {comment.user.achievement && (
                       <Badge className="bg-orange-500 text-white text-xs px-2 py-0.5 shadow-sm animate-pulse">
@@ -589,7 +990,117 @@ export function Reviews({ onNavigate }: ReviewsProps) {
                   </div>
                 )}
                 
-                <p className="text-sm text-muted-foreground leading-relaxed">{comment.content}</p>
+                {/* Edit Mode */}
+                {editingCommentId === comment.id ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="text-sm min-h-[80px]"
+                      placeholder="Edit your review..."
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={handleSaveEdit}
+                        disabled={isEditing || !editText.trim()}
+                      >
+                        {isEditing ? 'Saving...' : 'Save'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={handleCancelEdit}
+                        disabled={isEditing}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{comment.content}</p>
+                    
+                    {/* Edit/Delete buttons for own reviews */}
+                    {isOwnComment(comment) && (
+                      <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => handleEditComment(comment)}
+                          disabled={isEditing || isDeleting}
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-red-500 hover:text-red-600"
+                          onClick={() => handleDeleteComment(comment.id)}
+                          disabled={isEditing || (isDeleting && deletingCommentId !== comment.id)}
+                        >
+                          {isDeleting && deletingCommentId === comment.id ? (
+                            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-500"></div>
+                          ) : (
+                            <>
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Delete
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {/* Blockchain Verification Links for L3 Reviews */}
+                {comment.reviewLevel === 3 && comment.onChainVerified && (
+                  <div className="mt-2 pt-2 border-t border-green-500/20 flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1 text-xs text-green-500">
+                      <Shield className="h-3 w-3" />
+                      <span>On-chain verified</span>
+                    </div>
+                    {comment.hederaTopicId && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-green-500 hover:text-green-600"
+                        onClick={() => {
+                          window.open(`https://hashscan.io/testnet/topic/${comment.hederaTopicId}`, '_blank')
+                        }}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        View on Hashscan
+                      </Button>
+                    )}
+                    {comment.transactionHash && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-green-500 hover:text-green-600"
+                        onClick={() => {
+                          // Format: 0.0.7003610@1760987140.498673649 -> extract transaction ID
+                          if (comment.transactionHash) {
+                            const txId = comment.transactionHash.split('@')[0]
+                            window.open(`https://hashscan.io/testnet/transaction/${txId}`, '_blank')
+                          }
+                        }}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        Transaction
+                      </Button>
+                    )}
+                    {comment.hcsSequence && (
+                      <span className="text-xs text-muted-foreground">
+                        Sequence: {comment.hcsSequence}
+                      </span>
+                    )}
+                  </div>
+                )}
                 
                 {!comment.isAISummary && (
                   <div className="flex items-center justify-between pt-2">
@@ -637,29 +1148,61 @@ export function Reviews({ onNavigate }: ReviewsProps) {
               const isVerified = level === 1 ? true : 
                                  level === 2 ? userProfile.verifiedL2 : 
                                  userProfile.verifiedL3
+              const verificationMessage = level === 1 
+                ? 'L1 reviews are available to all users'
+                : level === 2
+                ? 'L2 requires Self Protocol verification (passport)'
+                : 'L3 requires social media verification'
+              
               return (
-                <Button
-                  key={level}
-                  variant={selectedLevel === level ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => {
-                    if (isVerified) {
-                      setSelectedLevel(level as ReviewLevel)
-                    } else {
-                      toast.info(`L${level} verification required`, {
-                        description: level === 2 
-                          ? 'Complete Self Protocol verification in settings'
-                          : 'Verify your social media account in settings',
-                      })
-                    }
-                  }}
-                  disabled={!isVerified}
-                  title={!isVerified ? `L${level} verification required` : `Post L${level} review`}
-                >
-                  L{level}
-                  {!isVerified && <span className="ml-1 text-[10px]">🔒</span>}
-                </Button>
+                <Tooltip key={level}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={selectedLevel === level ? 'default' : isVerified ? 'outline' : 'outline'}
+                      size="sm"
+                      className={`h-6 px-2 text-xs ${
+                        !isVerified ? 'opacity-60 cursor-not-allowed' : ''
+                      } ${
+                        selectedLevel === level ? 'ring-2 ring-primary' : ''
+                      }`}
+                      onClick={() => {
+                        if (isVerified) {
+                          setSelectedLevel(level as ReviewLevel)
+                        } else {
+                          toast.info(`L${level} verification required`, {
+                            description: level === 2 
+                              ? 'Complete Self Protocol verification in settings to post L2 reviews'
+                              : 'Verify your social media account in settings to post L3 reviews',
+                            action: {
+                              label: 'Go to Settings',
+                              onClick: () => onNavigate?.('settings'),
+                            },
+                          })
+                        }
+                      }}
+                      disabled={!isVerified}
+                    >
+                      L{level}
+                      {isVerified ? (
+                        <span className="ml-1 text-[10px]">✓</span>
+                      ) : (
+                        <span className="ml-1 text-[10px]">🔒</span>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">
+                      {isVerified 
+                        ? `Post L${level} review (Verified)` 
+                        : verificationMessage}
+                    </p>
+                    {!isVerified && (
+                      <p className="text-xs mt-1 text-muted-foreground">
+                        Go to Settings to verify
+                      </p>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
               )
             })}
             </div>

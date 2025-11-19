@@ -20,8 +20,18 @@ export default defineConfig({
     zip({ outDir: "release", outFileName: `crx-${name}-${version}.zip` }),
   ],
   server: {
+    port: 6969,
+    strictPort: true, // Fail if port is already in use
+    host: true, // Listen on all addresses
+    open: false, // Don't auto-open browser (extension needs manual loading)
     cors: {
       origin: [/chrome-extension:\/\//],
     },
+  },
+  preview: {
+    port: 6969,
+    strictPort: true,
+    host: true,
+    open: true, // Auto-open preview when using npm run preview
   },
 });

@@ -28,6 +28,12 @@ export interface CreateReviewRequest {
   productId: string
   content: string
   level: ReviewLevel
+  // Backend expects these fields:
+  reviewId?: string  // Optional - backend can generate if not provided
+  rating?: number    // Optional - default to 5 if not provided
+  text?: string      // Alias for content
+  authorId?: string  // Will be set from auth context
+  reviewerWallet?: string  // Required for L3 reviews
 }
 
 export interface CreateReviewResponse {
@@ -98,8 +104,36 @@ export const reviewsApi = {
 
   // Generic create review (will route to appropriate endpoint based on level)
   createReview: async (data: CreateReviewRequest): Promise<CreateReviewResponse> => {
-    const endpoint = `reviews/l${data.level}`
-    return api.post<CreateReviewResponse>(endpoint, data, { requireAuth: true })
+    // Generate reviewId if not provided
+    const reviewId = data.reviewId || `review-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    // Prepare request body matching backend expectations
+    const requestBody: any = {
+      reviewId,
+      productId: data.productId,
+      text: data.text || data.content,
+      rating: data.rating || 5, // Default rating to 5 if not provided
+      authorId: data.authorId, // Should be set by caller from user context
+    }
+    
+    // Add reviewerWallet for L3 reviews
+    if (data.level === 3 && data.reviewerWallet) {
+      requestBody.reviewerWallet = data.reviewerWallet
+    }
+    
+    // Use appropriate endpoint
+    const endpoint = data.level === 3 ? `reviews/l3-batch` : `reviews/l${data.level}`
+    return api.post<CreateReviewResponse>(endpoint, requestBody, { requireAuth: true })
+  },
+
+  // Update review (backend endpoint needs to be implemented)
+  updateReview: async (reviewId: string, data: { text?: string; rating?: number }): Promise<CreateReviewResponse> => {
+    return api.patch<CreateReviewResponse>(`reviews/${reviewId}`, data, { requireAuth: true })
+  },
+
+  // Delete review (backend endpoint needs to be implemented)
+  deleteReview: async (reviewId: string): Promise<{ success: boolean; message?: string }> => {
+    return api.delete<{ success: boolean; message?: string }>(`reviews/${reviewId}`, { requireAuth: true })
   },
 }
 

@@ -120,10 +120,34 @@ export function Settings({ onBack }: SettingsProps) {
     }
   }
 
+  const [userStats, setUserStats] = useState({
+    totalReviews: 0,
+    level: 1,
+    score: 0,
+    achievements: [] as string[],
+  })
+
+  // Fetch user stats
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const stats = await userApi.getStats()
+        setUserStats(stats)
+      } catch (error) {
+        console.error('Failed to fetch user stats:', error)
+        // Use defaults if fetch fails
+      }
+    }
+    
+    if (user?.id) {
+      loadStats()
+    }
+  }, [user?.id])
+
   const stats = [
-    { label: 'Level', value: userProfile.level, icon: TrendingUp, color: 'text-blue-500' },
-    { label: 'Rep Tokens', value: `$${userProfile.score}`, icon: BarChart3, color: 'text-green-500' },
-    { label: 'Comments', value: '12', icon: Award, color: 'text-purple-500' },
+    { label: 'Level', value: userStats.level, icon: TrendingUp, color: 'text-blue-500' },
+    { label: 'Rep Tokens', value: `$${userStats.score}`, icon: BarChart3, color: 'text-green-500' },
+    { label: 'Reviews', value: userStats.totalReviews.toString(), icon: Award, color: 'text-purple-500' },
   ]
 
   return (
@@ -433,8 +457,16 @@ export function Settings({ onBack }: SettingsProps) {
                   } catch (error) {
                     console.error('Self verification error:', error)
                     setIsVerifying(false)
+                    
+                    // Check if it's a backend endpoint missing error
+                    const errorMessage = error instanceof Error ? error.message : 'Please try again.'
+                    const isEndpointMissing = errorMessage.includes('not yet implemented') || errorMessage.includes('not found')
+                    
                     toast.error('Verification failed', {
-                      description: error instanceof Error ? error.message : 'Please try again.',
+                      description: isEndpointMissing 
+                        ? 'The Self Protocol verification endpoint is not yet available on the backend. This feature will be available once the backend implements the verification endpoint.'
+                        : errorMessage,
+                      duration: isEndpointMissing ? 8000 : 5000,
                     })
                   }
                 }}
@@ -462,7 +494,7 @@ export function Settings({ onBack }: SettingsProps) {
             </CardTitle>
             <CardDescription>Your activity and achievements</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
               {stats.map((stat, index) => (
                 <div key={index} className="text-center p-4 bg-muted/50 rounded-lg border transition-all hover:bg-muted hover:scale-105">
@@ -472,6 +504,26 @@ export function Settings({ onBack }: SettingsProps) {
                 </div>
               ))}
             </div>
+            
+            {/* Achievements Display */}
+            {userStats.achievements && userStats.achievements.length > 0 && (
+              <div className="mt-4 pt-4 border-t">
+                <Label className="text-sm font-semibold mb-2">Achievements</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {userStats.achievements.map((achievement, index) => (
+                    <Badge key={index} variant="default" className="gap-1">
+                      <Award className="h-3 w-3" />
+                      {achievement}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(!userStats.achievements || userStats.achievements.length === 0) && (
+              <div className="mt-4 pt-4 border-t text-center text-sm text-muted-foreground">
+                No achievements yet. Start posting reviews to earn achievements!
+              </div>
+            )}
           </CardContent>
         </Card>
 
